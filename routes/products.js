@@ -14,74 +14,169 @@ const attachS3ImageUrl = (product) => {
   return obj;
 };
 
-// GET /api/products
-router.get("/", async (req, res) => {
-  const { page = 1, limit = 50 } = req.query;
-  const products = await Product.find()
-    .skip((page - 1) * limit)
-    .limit(Math.min(limit, 100));
-  const total = await Product.countDocuments();
+// Helper functions to format responses according to API spec
+const formatListProduct = (product) => {
+  const p = product.toObject ? product.toObject() : product;
+  return {
+    Index: p.Index,
+    Name: p.Name,
+    Brand: p.Brand,
+    Category: p.Category,
+    Price: p.Price,
+    Currency: p.Currency,
+    Stock: p.Stock,
+    "Internal ID": p.Internal_ID || p.InternalID,
+  };
+};
 
-  const updatedProducts = products.map(attachS3ImageUrl);
+const formatDetailProduct = (product) => {
+  const p = attachS3ImageUrl(product);
+  return {
+    Index: p.Index,
+    Name: p.Name,
+    Description: p.Description,
+    Brand: p.Brand,
+    Category: p.Category,
+    Price: p.Price,
+    Currency: p.Currency,
+    Stock: p.Stock,
+    EAN: p.EAN,
+    Color: p.Color,
+    Size: p.Size,
+    Availability: p.Availability,
+    ShortDescription: p.ShortDescription,
+    Image: p.Image,
+    "Internal ID": p.Internal_ID || p.InternalID, // Format with space
+  };
+};
 
-  res.json({
-    products: updatedProducts,
-    pagination: {
-      page: Number(page),
-      limit: Number(limit),
-      total,
-      totalPages: Math.ceil(total / limit),
-      hasNext: page * limit < total,
-      hasPrev: page > 1,
-    },
-  });
-});
+// IMPORTANT: Define specific routes BEFORE parameterized routes
 
-// GET /api/products/:id
-router.get("/:id", async (req, res) => {
-  const product = await Product.findOne({ InternalID: req.params.id });
-  if (!product) return res.status(404).json({ error: "Not Found" });
-  res.json(attachS3ImageUrl(product));
-});
-
-// GET /api/products/search
-router.get("/search", async (req, res) => {
-  const { q = "", page = 1, limit = 50 } = req.query;
-  const query = { InternalID: { $regex: q, $options: "i" } };
-  const products = await Product.find(query)
-    .skip((page - 1) * limit)
-    .limit(Math.min(limit, 100));
-  const total = await Product.countDocuments(query);
-
-  const updatedProducts = products.map(attachS3ImageUrl);
-
-  res.json({
-    products: updatedProducts,
-    pagination: {
-      page: Number(page),
-      limit: Number(limit),
-      total,
-      totalPages: Math.ceil(total / limit),
-      hasNext: page * limit < total,
-      hasPrev: page > 1,
-    },
-  });
+// GET /api/products/categories
+router.get("/categories", async (req, res) => {
+  try {
+    const categories = await Product.distinct("Category");
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // GET /api/products/latest
 router.get("/latest", async (req, res) => {
-  const { limit = 10 } = req.query;
-  const products = await Product.find()
-    .sort({ Index: -1 })
-    .limit(Number(limit));
-  const updatedProducts = products.map(attachS3ImageUrl);
-  res.json({ products: updatedProducts });
+  try {
+    const { limit = 10 } = req.query;
+    const products = await Product.find()
+      .sort({ Index: -1 })
+      .limit(Math.min(Number(limit), 100));
+
+    const formattedProducts = products.map(formatListProduct);
+    res.json({ products: formattedProducts });
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-// GET /api/categories
-router.get("/categories", async (req, res) => {
-  const categories = await Product.distinct("Category");
-  res.json(categories);
+// GET /api/products/search
+router.get("/search", async (req, res) => {
+  try {
+    const { q = "", page = 1, limit = 50 } = req.query;
+    const pageNum = Number(page);
+    const limitNum = Math.min(Number(limit), 100);
+
+    const query = q
+      ? {
+          $or: [
+            { Internal_ID: { $regex: q, $options: "i" } },
+            { InternalID: { $regex: q, $options: "i" } },
+            { Name: { $regex: q, $options: "i" } },
+            { Brand: { $regex: q, $options: "i" } },
+            { Category: { $regex: q, $options: "i" } },
+          ],
+        }
+      : {};
+
+    const products = await Product.find(query)
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum);
+    const total = await Product.countDocuments(query);
+
+    const formattedProducts = products.map(formatListProduct);
+
+    res.json({
+      products: formattedProducts,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+        hasNext: pageNum * limitNum < total,
+        hasPrev: pageNum > 1,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/products (list all)
+router.get("/", async (req, res) => {
+  try {
+    const { page = 1, limit = 50 } = req.query;
+    const pageNum = Number(page);
+    const limitNum = Math.min(Number(limit), 100);
+
+    const products = await Product.find()
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum);
+    const total = await Product.countDocuments();
+
+    const formattedProducts = products.map(formatListProduct);
+
+    res.json({
+      products: formattedProducts,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+        hasNext: pageNum * limitNum < total,
+        hasPrev: pageNum > 1,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/products/:id (get by _id or Internal_ID)
+// This MUST be the LAST route
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    let product;
+
+    // Check if it's a valid MongoDB ObjectId
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      product = await Product.findById(id);
+    }
+
+    // If not found by _id, try Internal_ID or InternalID
+    if (!product) {
+      product = await Product.findOne({
+        $or: [{ Internal_ID: id }, { InternalID: id }],
+      });
+    }
+
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Product detail endpoint returns just the product, no pagination
+    res.json(formatDetailProduct(product));
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 module.exports = router;
