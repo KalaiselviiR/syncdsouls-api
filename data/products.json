@@ -1,8 +1,4 @@
-require('dotenv').config();
-const mongoose = require('mongoose');
-const Product = require('./models/Product');
-
-const products = [
+[
   {
     "Index": 1,
     "Name": "Thermostat Drone Heater",
@@ -17003,29 +16999,4 @@ const products = [
     "Image": "20.jpg",
     "Internal ID": "fe4409e9-527b-4b73-8b57-34c91d4f4ff0"
   }
-];
-// Mongo connection and insert
-async function uploadData() {
-  try {
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
-
-    console.log("MongoDB connected ✅");
-
-    // Clear collection first if needed
-    await Product.deleteMany({});
-    console.log("Old data cleared 🧹");
-
-    await Product.insertMany(products);
-    console.log("Data inserted ✅");
-
-    process.exit();
-  } catch (error) {
-    console.error("Mongo Error ❌", error);
-    process.exit(1);
-  }
-}
-
-uploadData();
+]
